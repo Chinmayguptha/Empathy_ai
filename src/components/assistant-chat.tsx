@@ -43,33 +43,43 @@ export default function AssistantChat() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] = useState(true);
-  const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(false); // Initial: false (server-safe)
-  const [isSpeechRecognitionAvailable, setIsSpeechRecognitionAvailable] = useState(false); // Initial: false (server-safe)
+  const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(false);
+  const [isSpeechRecognitionAvailable, setIsSpeechRecognitionAvailable] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
+  // Effect to determine Speech Synthesis Support
   useEffect(() => {
     if (!hasMounted) return;
 
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       setIsSpeechSynthesisSupported(true);
     } else if (typeof window !== 'undefined') {
-      // setIsSpeechSynthesisSupported(false); // already false
-      toast({
-        title: "Audio Playback Not Supported",
-        description: "Your browser does not support speech synthesis for AI responses. Audio playback will be disabled.",
-        variant: "default",
-      });
+      // setIsSpeechSynthesisSupported(false); // Initial state is already false
+      // Toast can be shown in a separate effect if needed or here if toast itself is stable
     }
-  }, [hasMounted, toast]);
+  }, [hasMounted]);
+
+  // Effect to determine Speech Recognition Support
+  useEffect(() => {
+    if (!hasMounted) return;
+
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognitionAPI) {
+      setIsSpeechRecognitionAvailable(true);
+    } else {
+      // setIsSpeechRecognitionAvailable(false); // Initial state is already false
+    }
+  }, [hasMounted]);
+
 
   const playTextAsAudio = useCallback((text: string) => {
     if (!isAudioPlaybackEnabled || !isSpeechSynthesisSupported || typeof window === 'undefined' || !window.speechSynthesis) return;
     
-    window.speechSynthesis.cancel();
+    window.speechSynthesis.cancel(); // Cancel any previous speech
     
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
@@ -106,80 +116,7 @@ export default function AssistantChat() {
     }
   }, [conversationLog]);
 
-  useEffect(() => {
-    if (!hasMounted || typeof window === 'undefined') return;
-
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
-      setStatusMessage("Speech recognition not supported. You can still type messages.");
-      setIsSpeechRecognitionAvailable(false); 
-      toast({
-        title: "Browser Compatibility",
-        description: "Speech recognition is not available in your browser. Please try Chrome or Edge. You can still type messages.",
-        variant: "default",
-      });
-      return;
-    }
-    setIsSpeechRecognitionAvailable(true);
-
-    const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setStatusMessage("Listening...");
-      addMessageToLog({ sender: 'system-status', text: "Listening started..." });
-    };
-
-    recognition.onresult = (event: CustomSpeechRecognitionEvent) => {
-      let interimTranscript = "";
-      let finalTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
-      }
-      if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
-      if (finalTranscript) {
-        processUserInput(finalTranscript.trim());
-      }
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      setIsListening(false);
-      let errorMsg = "An error occurred during speech recognition.";
-      if (event.error === 'no-speech') {
-        errorMsg = "No speech detected. Please try again or type your message.";
-      } else if (event.error === 'audio-capture') {
-        errorMsg = "Audio capture error. Check your microphone.";
-      } else if (event.error === 'not-allowed') {
-        errorMsg = "Microphone access denied. Please enable microphone permissions.";
-      }
-      setStatusMessage(errorMsg);
-      addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
-      toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (!isLoading) setStatusMessage("Tap the microphone or type your message");
-    };
-
-    speechRecognitionRef.current = recognition;
-
-    return () => {
-      speechRecognitionRef.current?.stop();
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [hasMounted, toast, addMessageToLog, isLoading]); // Removed isSpeechRecognitionAvailable from deps as it's set within
-
-  const processUserInput = async (text: string) => {
+  const processUserInput = useCallback(async (text: string) => {
     if (!text) {
       setStatusMessage("No input detected. Tap microphone or type and send.");
       setIsListening(false); 
@@ -224,7 +161,101 @@ export default function AssistantChat() {
       setIsLoading(false);
       setStatusMessage("Tap the microphone or type your message");
     }
-  };
+  }, [addMessageToLog, toast, playTextAsAudio, isAudioPlaybackEnabled, isSpeechSynthesisSupported]);
+
+
+  // Effect to show compatibility messages and set up Speech Recognition instance
+  useEffect(() => {
+    if (!hasMounted) return;
+
+    if (isSpeechRecognitionAvailable) {
+      const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognitionAPI) return; // Should not happen if isSpeechRecognitionAvailable is true
+
+      const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setStatusMessage("Listening...");
+        addMessageToLog({ sender: 'system-status', text: "Listening started..." });
+      };
+
+      recognition.onresult = (event: CustomSpeechRecognitionEvent) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
+        if (finalTranscript) {
+          processUserInput(finalTranscript.trim());
+        }
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        setIsListening(false);
+        let errorMsg = "An error occurred during speech recognition.";
+        if (event.error === 'no-speech') {
+          errorMsg = "No speech detected. Please try again or type your message.";
+        } else if (event.error === 'audio-capture') {
+          errorMsg = "Audio capture error. Check your microphone.";
+        } else if (event.error === 'not-allowed') {
+          errorMsg = "Microphone access denied. Please enable microphone permissions.";
+        }
+        setStatusMessage(errorMsg);
+        addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
+        toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        // Only reset status message if not currently loading a response
+        if (!isLoading) setStatusMessage("Tap the microphone or type your message");
+      };
+
+      speechRecognitionRef.current = recognition;
+
+      return () => {
+        speechRecognitionRef.current?.stop();
+        // Cancel speech synthesis on component unmount is good practice
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+      };
+    } else {
+      // This block runs if hasMounted is true, but isSpeechRecognitionAvailable is false
+      // (meaning the API wasn't found in the previous effect).
+      // This is where to put the "not supported" message.
+      if (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) ) {
+          setStatusMessage("Speech recognition not supported. You can still type messages.");
+          toast({
+            title: "Browser Compatibility",
+            description: "Speech recognition is not available in your browser. Please try Chrome or Edge. You can still type messages.",
+            variant: "default",
+          });
+      }
+    }
+  }, [hasMounted, isSpeechRecognitionAvailable, toast, addMessageToLog, isLoading, processUserInput, setIsLoading, setStatusMessage, setIsListening]); // Added setIsLoading, setStatusMessage, setIsListening
+
+  // Effect for Speech Synthesis "not supported" message
+  useEffect(() => {
+      if (!hasMounted) return;
+      if (!isSpeechSynthesisSupported && typeof window !== 'undefined' && !window.speechSynthesis) {
+          toast({
+              title: "Audio Playback Not Supported",
+              description: "Your browser does not support speech synthesis for AI responses. Audio playback will be disabled.",
+              variant: "default",
+          });
+      }
+  }, [hasMounted, isSpeechSynthesisSupported, toast]);
+
 
   const handleSendTextMessage = () => {
     if (textInput.trim()) {
@@ -241,6 +272,7 @@ export default function AssistantChat() {
     if (isListening) {
       speechRecognitionRef.current?.stop();
     } else {
+      // Check for microphone permission before starting
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           speechRecognitionRef.current?.start();
@@ -260,9 +292,9 @@ export default function AssistantChat() {
       case 'sadness': case 'sad': return <Frown className="w-6 h-6 text-blue-500" />;
       case 'anger': case 'angry': return <Angry className="w-6 h-6 text-red-500" />;
       case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />;
-      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />;
+      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />; // Or a more fitting icon
       case 'neutral': return <Info className="w-6 h-6 text-gray-400" />;
-      default: return <Brain className="w-6 h-6 text-gray-500" />;
+      default: return <Brain className="w-6 h-6 text-gray-500" />; // For unknown or other emotions
     }
   };
 
@@ -346,37 +378,62 @@ export default function AssistantChat() {
 
           <div className="flex flex-col xs:flex-row items-center justify-between gap-3">
              <div className="flex items-center justify-center space-x-2 p-2 border rounded-lg bg-card shadow-md min-w-[140px]">
-                <Switch
-                  id="audio-playback-switch"
-                  checked={isAudioPlaybackEnabled}
-                  onCheckedChange={setIsAudioPlaybackEnabled}
-                  disabled={!hasMounted || !isSpeechSynthesisSupported}
-                  aria-label={isAudioPlaybackEnabled ? "Disable audio response" : "Enable audio response"}
-                />
-                <Label htmlFor="audio-playback-switch" className="flex items-center text-muted-foreground cursor-pointer text-sm sm:text-base">
-                  {isAudioPlaybackEnabled ? <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" /> : <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />}
-                  <span className="ml-1.5 hidden sm:inline">Audio</span>
-                </Label>
-              </div>
-            <Button
-                onClick={toggleListening}
-                disabled={!hasMounted || isLoading || !isSpeechRecognitionAvailable}
-                className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
-                aria-label={isListening ? "Stop listening" : "Start listening"}
-                variant={isListening ? "destructive" : "default"}
-            >
-                {isLoading && !isListening ? (
-                    <Loader2 className="w-7 h-7 mr-2 animate-spin" />
-                ) : isListening ? (
-                    <MicOff className="w-7 h-7 mr-2 animate-pulse" />
+                {!hasMounted ? (
+                  <>
+                    <Switch id="audio-playback-switch-disabled" disabled checked={isAudioPlaybackEnabled} />
+                    <Label htmlFor="audio-playback-switch-disabled" className="flex items-center text-muted-foreground cursor-not-allowed text-sm sm:text-base">
+                      <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                      <span className="ml-1.5 hidden sm:inline">Audio</span>
+                    </Label>
+                  </>
                 ) : (
-                    <Mic className="w-7 h-7 mr-2" />
+                  <>
+                    <Switch
+                      id="audio-playback-switch"
+                      checked={isAudioPlaybackEnabled}
+                      onCheckedChange={setIsAudioPlaybackEnabled}
+                      disabled={!isSpeechSynthesisSupported} // Only disabled if feature not supported, not by isLoading
+                      aria-label={isAudioPlaybackEnabled ? "Disable audio response" : "Enable audio response"}
+                    />
+                    <Label htmlFor="audio-playback-switch" className="flex items-center text-muted-foreground cursor-pointer text-sm sm:text-base">
+                      {isAudioPlaybackEnabled ? <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" /> : <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />}
+                      <span className="ml-1.5 hidden sm:inline">Audio</span>
+                    </Label>
+                  </>
                 )}
-                {isLoading && !isListening ? 'Processing...' : (isListening ? 'Listening...' : 'Tap to Talk')}
-            </Button>
+              </div>
+            
+            {!hasMounted ? (
+                 <Button
+                    disabled={true}
+                    className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg"
+                    aria-label="Loading microphone"
+                >
+                    <Loader2 className="w-7 h-7 mr-2 animate-spin" />
+                    Mic...
+                </Button>
+            ) : (
+                <Button
+                    onClick={toggleListening}
+                    disabled={isLoading || !isSpeechRecognitionAvailable} // No !hasMounted here as hasMounted is true
+                    className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
+                    aria-label={isListening ? "Stop listening" : "Start listening"}
+                    variant={isListening ? "destructive" : "default"}
+                >
+                    {isLoading && !isListening ? ( // if loading but not listening (i.e. processing text or previous audio)
+                        <Loader2 className="w-7 h-7 mr-2 animate-spin" />
+                    ) : isListening ? (
+                        <MicOff className="w-7 h-7 mr-2 animate-pulse" />
+                    ) : (
+                        <Mic className="w-7 h-7 mr-2" />
+                    )}
+                    {isLoading && !isListening ? 'Processing...' : (isListening ? 'Listening...' : 'Tap to Talk')}
+                </Button>
+            )}
           </div>
         </div>
       </CardContent>
     </Card>
   );
 }
+
