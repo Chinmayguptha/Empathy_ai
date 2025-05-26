@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText, Info } from 'lucide-react';
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText, Info, Volume2, VolumeX } from 'lucide-react';
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
 import { summarizeConversation, SummarizeConversationInput } from '@/ai/flows/conversation-summarizer';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface ConversationMessage {
   id: string;
@@ -42,13 +44,44 @@ export default function AssistantChat() {
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] = useState(true);
+  const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !window.speechSynthesis) {
+      setIsSpeechSynthesisSupported(false);
+      toast({
+        title: "Audio Playback Not Supported",
+        description: "Your browser does not support speech synthesis for AI responses. Audio playback will be disabled.",
+        variant: "default",
+      });
+    }
+  }, [toast]);
+
+  const playTextAsAudio = useCallback((text: string) => {
+    if (!isSpeechSynthesisSupported || !window.speechSynthesis) return;
+    
+    window.speechSynthesis.cancel(); // Stop any currently playing/pending speech
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US'; // You can make this configurable if needed
+    utterance.onerror = (event) => {
+      console.error("Speech synthesis error:", event.error);
+      toast({
+        title: "Audio Playback Error",
+        description: `Could not play audio response: ${event.error}`,
+        variant: "destructive",
+      });
+    };
+    window.speechSynthesis.speak(utterance);
+  }, [isSpeechSynthesisSupported, toast]);
+
   const addMessageToLog = useCallback((message: Omit<ConversationMessage, 'id' | 'timestamp'>) => {
     setConversationLog(prevLog => {
       const newLog = [
         ...prevLog,
         { ...message, id: Date.now().toString() + Math.random(), timestamp: new Date().toISOString() }
       ];
-      // Clear summary when new messages are added
       setConversationSummary(null);
       if (newLog.length > MAX_LOG_LENGTH) {
         return newLog.slice(newLog.length - MAX_LOG_LENGTH);
@@ -131,6 +164,9 @@ export default function AssistantChat() {
 
     return () => {
       speechRecognitionRef.current?.stop();
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel(); // Cancel any speech on component unmount
+      }
     };
   }, [toast, addMessageToLog, isLoading, isSummarizing]);
 
@@ -161,6 +197,10 @@ export default function AssistantChat() {
         userInputText: text 
       });
       addMessageToLog({ sender: 'ai', text: empatheticResponseResult.response, emotion: emotionResult.emotion });
+
+      if (isAudioPlaybackEnabled && isSpeechSynthesisSupported) {
+        playTextAsAudio(empatheticResponseResult.response);
+      }
       
     } catch (error) {
       console.error("AI processing error:", error);
@@ -247,7 +287,7 @@ export default function AssistantChat() {
       case 'sadness': case 'sad': return <Frown className="w-6 h-6 text-blue-500" />;
       case 'anger': case 'angry': return <Angry className="w-6 h-6 text-red-500" />;
       case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />;
-      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />; // Consider a more specific icon if available
+      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />;
       case 'neutral': return <Info className="w-6 h-6 text-gray-400" />;
       default: return <Brain className="w-6 h-6 text-gray-500" />;
     }
@@ -318,23 +358,38 @@ export default function AssistantChat() {
         )}
         
         <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-                onClick={handleSummarizeConversation}
-                disabled={isLoading || isSummarizing || !canSummarize}
-                className="w-full sm:w-auto flex-grow text-lg rounded-lg shadow-md"
-                variant="outline"
-            >
-                {isSummarizing ? (
-                    <Loader2 className="w-6 h-6 mr-2 animate-spin" />
-                ) : (
-                    <FileText className="w-6 h-6 mr-2" />
-                )}
-                {isSummarizing ? 'Summarizing...' : 'Summarize Chat'}
-            </Button>
+            <div className="flex gap-3 flex-col xs:flex-row sm:flex-grow-[0.6] "> 
+              <Button
+                  onClick={handleSummarizeConversation}
+                  disabled={isLoading || isSummarizing || !canSummarize}
+                  className="w-full xs:w-auto flex-grow text-lg rounded-lg shadow-md"
+                  variant="outline"
+              >
+                  {isSummarizing ? (
+                      <Loader2 className="w-6 h-6 mr-2 animate-spin" />
+                  ) : (
+                      <FileText className="w-6 h-6 mr-2" />
+                  )}
+                  {isSummarizing ? 'Summarizing...' : 'Summarize'}
+              </Button>
+              <div className="flex items-center justify-center space-x-2 p-2 border rounded-lg bg-card shadow-md flex-grow xs:flex-grow-0 min-w-[140px]">
+                <Switch
+                  id="audio-playback-switch"
+                  checked={isAudioPlaybackEnabled}
+                  onCheckedChange={setIsAudioPlaybackEnabled}
+                  disabled={!isSpeechSynthesisSupported}
+                  aria-label={isAudioPlaybackEnabled ? "Disable audio response" : "Enable audio response"}
+                />
+                <Label htmlFor="audio-playback-switch" className="flex items-center text-muted-foreground cursor-pointer text-sm sm:text-base">
+                  {isAudioPlaybackEnabled ? <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" /> : <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />}
+                  <span className="ml-1.5 hidden sm:inline">Audio</span>
+                </Label>
+              </div>
+            </div>
             <Button
                 onClick={toggleListening}
                 disabled={isLoading || isSummarizing || (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))}
-                className="w-full sm:w-auto flex-grow h-16 text-xl rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
+                className="w-full sm:flex-grow-[0.4] h-16 text-xl rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
                 aria-label={isListening ? "Stop listening" : "Start listening"}
             >
                 {isListening ? (
