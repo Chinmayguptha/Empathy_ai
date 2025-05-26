@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -13,6 +14,7 @@ import {z} from 'genkit';
 
 const AnalyzeEmotionInputSchema = z.object({
   text: z.string().describe('The text to analyze for emotion.'),
+  languageCode: z.string().optional().describe('The BCP-47 language code of the input text (e.g., en-US, hi-IN). If not provided, the AI will attempt to auto-detect.'),
 });
 export type AnalyzeEmotionInput = z.infer<typeof AnalyzeEmotionInputSchema>;
 
@@ -20,7 +22,7 @@ const AnalyzeEmotionOutputSchema = z.object({
   emotion: z
     .string()
     .describe(
-      'The predominant emotion detected in the text (e.g., happiness, sadness, anger, neutral).'
+      'The predominant emotion detected in the text (e.g., happiness, sadness, anger, neutral). This should be an English term.'
     ),
   confidence: z
     .number()
@@ -36,7 +38,14 @@ const prompt = ai.definePrompt({
   name: 'analyzeEmotionPrompt',
   input: {schema: AnalyzeEmotionInputSchema},
   output: {schema: AnalyzeEmotionOutputSchema},
-  prompt: `You are an AI emotion analyzer. Your task is to carefully analyze the following text to identify the underlying emotion, even if no explicit emotion words (like "happy", "sad", "angry") are used. Consider the phrasing, implications, and subtle cues within the text to determine the most likely predominant emotion. If the text is purely factual or a question without clear emotional tone, classify it as "neutral". Also, provide a confidence level (0 to 1) for your analysis.\n\nText: {{{text}}}`,
+  prompt: `You are an AI emotion analyzer. Your task is to carefully analyze the following text to identify the underlying emotion, even if no explicit emotion words (like "happy", "sad", "angry") are used.
+The input text might be in any language, if a languageCode is provided ({{{languageCode}}}), use that as a hint.
+Consider the phrasing, implications, and subtle cues within the text to determine the most likely predominant emotion.
+If the text is purely factual or a question without clear emotional tone, classify it as "neutral".
+Also, provide a confidence level (0 to 1) for your analysis.
+Output the detected emotion as an English word (e.g., happiness, sadness, anger, neutral).
+
+Text: {{{text}}}`,
 });
 
 const analyzeEmotionFlow = ai.defineFlow(
@@ -50,3 +59,4 @@ const analyzeEmotionFlow = ai.defineFlow(
     return output!;
   }
 );
+

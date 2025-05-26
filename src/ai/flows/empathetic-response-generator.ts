@@ -1,7 +1,7 @@
 
 'use server';
 /**
- * @fileOverview An AI agent that generates empathetic responses based on detected emotion and user context.
+ * @fileOverview An AI agent that generates empathetic responses based on detected emotion and user context, supporting multiple languages.
  *
  * - generateEmpatheticResponse - A function that generates an empathetic response.
  * - EmpatheticResponseInput - The input type for the generateEmpatheticResponse function.
@@ -12,15 +12,16 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const EmpatheticResponseInputSchema = z.object({
-  userInputText: z.string().describe("The original text spoken by the user."),
+  userInputText: z.string().describe("The original text spoken or typed by the user."),
   emotion: z
     .string()
-    .describe('The emotion detected from the user\'s speech or text (e.g., happy, sad, angry, neutral).'),
+    .describe('The predominant emotion detected from the user\'s input (e.g., happy, sad, angry, neutral). This will be an English term.'),
+  languageCode: z.string().describe('The BCP-47 language code the user is interacting in and expects a response in (e.g., en-US, hi-IN, kn-IN, te-IN).'),
 });
 export type EmpatheticResponseInput = z.infer<typeof EmpatheticResponseInputSchema>;
 
 const EmpatheticResponseOutputSchema = z.object({
-  response: z.string().describe('An empathetic and contextually relevant response.'),
+  response: z.string().describe('An empathetic and contextually relevant response, in the specified languageCode.'),
 });
 export type EmpatheticResponseOutput = z.infer<typeof EmpatheticResponseOutputSchema>;
 
@@ -34,30 +35,33 @@ const prompt = ai.definePrompt({
   name: 'empatheticResponsePrompt',
   input: {schema: EmpatheticResponseInputSchema},
   output: {schema: EmpatheticResponseOutputSchema},
-  prompt: `You are an AI assistant designed to provide empathetic and clear responses to users, especially elderly users.
-You will be given the original user's statement and a detected predominant emotion from that statement.
+  prompt: `You are an AI assistant designed to provide empathetic and clear responses to users, especially elderly users, in their preferred language.
+You will be given the original user's statement, a detected predominant emotion (as an English term), and a target languageCode for your response.
 
 User's statement: {{{userInputText}}}
-Detected Emotion: {{{emotion}}}
+Detected Emotion (English term): {{{emotion}}}
+Target Language for Response (BCP-47 code): {{{languageCode}}}
 
-Based on both the user's statement and the detected emotion, generate a brief, supportive, and comforting message.
+IMPORTANT: Your entire response MUST be in the language specified by '{{{languageCode}}}'.
 
-Your response structure should be:
-1.  Start by explicitly acknowledging the detected emotion. For example: "I hear that you're feeling {{{emotion}}}..." or "It sounds like you're feeling a bit {{{emotion}}} right now..."
-2.  Then, briefly paraphrase or directly reference the key part of the user's statement to show you've understood their specific context. For example, if the user said "I'm so worried about my upcoming doctor's appointment" and the emotion detected was "anxiety", you might follow with "...about your upcoming doctor's appointment."
-3.  Finally, offer your empathetic remark, encouragement, or clarification.
+Based on the user's statement and the detected emotion, generate a brief, supportive, and comforting message in the target language '{{{languageCode}}}'.
 
-- Tailor the message to the specific detected emotion, offering words of encouragement, understanding, or appropriate suggestions.
-- If the user's statement is a question or implies a need for information, even if an emotion is detected, prioritize providing a clear and helpful answer first, then weave in empathy if appropriate. For example, if the user asks "What's the weather like?" and seems anxious, you might say "The weather is partly cloudy today. I understand you might be feeling a bit anxious about it, is there anything specific you'd like to talk about regarding that? 🌦️"
-- Keep the response concise (1-3 sentences in total after the acknowledgment and paraphrase) and easy to understand.
+Your response structure should be (adapt this structure to be natural in '{{{languageCode}}}'):
+1.  Start by explicitly acknowledging the detected emotion, translated appropriately into '{{{languageCode}}}'. For example, if emotion is 'sadness' and language is 'hi-IN', you might start with something like "मुझे सुनके दुःख हुआ कि आप उदास महसूस कर रहे हैं..." (I hear that you're feeling sad...).
+2.  Then, briefly paraphrase or directly reference the key part of the user's statement (also in '{{{languageCode}}}') to show you've understood their specific context.
+3.  Finally, offer your empathetic remark, encouragement, or clarification in '{{{languageCode}}}'.
+
+- Tailor the message to the specific detected emotion, offering words of encouragement, understanding, or appropriate suggestions, all in '{{{languageCode}}}'.
+- If the user's statement is a question or implies a need for information, even if an emotion is detected, prioritize providing a clear and helpful answer first in '{{{languageCode}}}', then weave in empathy if appropriate.
+- Keep the response concise (1-3 sentences in total after acknowledgment and paraphrase) and easy to understand in '{{{languageCode}}}'.
 - Always add a relevant emoji at the end of the response.
-- Focus on these primary emotions when tailoring empathy: Joy, Sadness, Anger, Anxiety, Loneliness.
-  - If Joy: Express shared happiness, acknowledge their positive experience.
-  - If Sadness: Offer comfort and understanding, validate their feelings.
-  - If Anger: Respond with calm and reassurance, perhaps gently acknowledge their frustration without escalating.
-  - If Anxiety: Provide soothing and grounding words, offer reassurance.
-  - If Loneliness: Express companionship, offer connection or a listening ear.
-- If the emotion is "neutral" or unclear, or if the user's statement is purely factual or a direct question without strong emotional overlay, focus on providing a clear, helpful, and polite response to the content of their statement, still acknowledging the context.
+- Focus on these primary emotions when tailoring empathy (these are English terms, translate the *concept* to '{{{languageCode}}}' for your response): Joy, Sadness, Anger, Anxiety, Loneliness.
+  - If Joy: Express shared happiness.
+  - If Sadness: Offer comfort and understanding.
+  - If Anger: Respond with calm and reassurance.
+  - If Anxiety: Provide soothing and grounding words.
+  - If Loneliness: Express companionship.
+- If the emotion is "neutral" or unclear, or if the user's statement is purely factual or a direct question without strong emotional overlay, focus on providing a clear, helpful, and polite response to the content of their statement in '{{{languageCode}}}', still acknowledging the context.
 - Ensure the response is in a single paragraph.
 `,
 });
@@ -73,3 +77,4 @@ const empatheticResponseFlow = ai.defineFlow(
     return output!;
   }
 );
+

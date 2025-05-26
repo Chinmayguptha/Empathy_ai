@@ -6,13 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, Info, Volume2, VolumeX, SendHorizonal, FileText } from 'lucide-react';
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, Info, Volume2, VolumeX, SendHorizonal, Languages } from 'lucide-react';
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ConversationMessage {
   id: string;
@@ -28,10 +35,17 @@ interface CustomSpeechRecognitionEvent extends Event {
 }
 interface CustomSpeechRecognition extends SpeechRecognition {
   onresult: (event: CustomSpeechRecognitionEvent) => void;
-  onerror: (event: SpeechRecognitionErrorEvent) => void; // Ensure onerror type is correct
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
 }
 
 const MAX_LOG_LENGTH = 20;
+
+const SUPPORTED_LANGUAGES = [
+  { value: 'en-US', label: 'English (US)' },
+  { value: 'hi-IN', label: 'हिंदी (Hindi)' },
+  { value: 'kn-IN', label: 'ಕನ್ನಡ (Kannada)' },
+  { value: 'te-IN', label: 'తెలుగు (Telugu)' },
+];
 
 export default function AssistantChat() {
   const [isListening, setIsListening] = useState(false);
@@ -47,53 +61,29 @@ export default function AssistantChat() {
   const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(false);
   const [isSpeechRecognitionAvailable, setIsSpeechRecognitionAvailable] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(SUPPORTED_LANGUAGES[0].value);
 
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // Effect to determine Speech Synthesis Support
   useEffect(() => {
     if (!hasMounted) return;
-
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       setIsSpeechSynthesisSupported(true);
     } else if (typeof window !== 'undefined') {
       setIsSpeechSynthesisSupported(false);
-      if (isAudioPlaybackEnabled) {
-        setIsAudioPlaybackEnabled(false);
-      }
+      if (isAudioPlaybackEnabled) setIsAudioPlaybackEnabled(false);
     }
   }, [hasMounted, isAudioPlaybackEnabled]);
 
-  // Effect to determine Speech Recognition Support
-  useEffect(() => {
-    if (!hasMounted) return;
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognitionAPI) {
-      setIsSpeechRecognitionAvailable(true);
-    } else {
-      setIsSpeechRecognitionAvailable(false);
-    }
-  }, [hasMounted]);
-  
-  // Effect for component unmount cleanup for speech synthesis
-  useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel(); 
-      }
-    };
-  }, []);
-
-
-  const playTextAsAudio = useCallback((text: string) => {
+  const playTextAsAudio = useCallback((text: string, lang: string) => {
     if (!isAudioPlaybackEnabled || !isSpeechSynthesisSupported || typeof window === 'undefined' || !window.speechSynthesis) return;
     
     window.speechSynthesis.cancel(); 
     
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
+    utterance.lang = lang; // Use selected language for speech
     utterance.onerror = (event) => {
       console.error("Speech synthesis error:", event.error);
       toast({
@@ -139,7 +129,7 @@ export default function AssistantChat() {
     setStatusMessage("Thinking..."); 
 
     try {
-      const emotionResult = await analyzeEmotion({ text });
+      const emotionResult = await analyzeEmotion({ text, languageCode: selectedLanguage });
       addMessageToLog({
         sender: 'system-emotion',
         text: `Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)`,
@@ -148,12 +138,13 @@ export default function AssistantChat() {
 
       const empatheticResponseResult = await generateEmpatheticResponse({ 
         emotion: emotionResult.emotion,
-        userInputText: text 
+        userInputText: text,
+        languageCode: selectedLanguage
       });
       addMessageToLog({ sender: 'ai', text: empatheticResponseResult.response, emotion: emotionResult.emotion });
 
       if (isAudioPlaybackEnabled && isSpeechSynthesisSupported) {
-        playTextAsAudio(empatheticResponseResult.response);
+        playTextAsAudio(empatheticResponseResult.response, selectedLanguage);
       }
       
     } catch (error) {
@@ -169,28 +160,31 @@ export default function AssistantChat() {
       setIsLoading(false);
       setStatusMessage("Tap the microphone or type your message");
     }
-  }, [addMessageToLog, toast, playTextAsAudio, isAudioPlaybackEnabled, isSpeechSynthesisSupported]);
+  }, [addMessageToLog, toast, playTextAsAudio, isAudioPlaybackEnabled, isSpeechSynthesisSupported, selectedLanguage]);
 
-
-  // Effect to set up Speech Recognition instance
   useEffect(() => {
-    if (!hasMounted || !isSpeechRecognitionAvailable) return;
+    if (!hasMounted) return;
 
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) return; 
+    if (!SpeechRecognitionAPI) {
+      setIsSpeechRecognitionAvailable(false);
+      if (isListening) setIsListening(false);
+      return;
+    }
+    setIsSpeechRecognitionAvailable(true);
 
     if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.stop();
-        speechRecognitionRef.current.onstart = null;
-        speechRecognitionRef.current.onresult = null;
-        speechRecognitionRef.current.onerror = null;
-        speechRecognitionRef.current.onend = null;
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current.onstart = null;
+      speechRecognitionRef.current.onresult = null;
+      speechRecognitionRef.current.onerror = null;
+      speechRecognitionRef.current.onend = null;
     }
     
     const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    recognition.lang = selectedLanguage; // Use selected language
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -223,6 +217,8 @@ export default function AssistantChat() {
         errorMsg = "Audio capture error. Check your microphone.";
       } else if (event.error === 'not-allowed') {
         errorMsg = "Microphone access denied. Please enable microphone permissions.";
+      } else if (event.error === 'language-not-supported') {
+        errorMsg = `The selected language (${selectedLanguage}) is not supported by your browser's speech recognition.`;
       }
       setStatusMessage(errorMsg);
       addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
@@ -231,27 +227,29 @@ export default function AssistantChat() {
 
     recognition.onend = () => {
       setIsListening(false);
-      if (!isLoading) { // Only reset status if not already loading (e.g. processing input)
+      if (!isLoading) {
         setStatusMessage("Tap the microphone or type your message");
       }
     };
 
     speechRecognitionRef.current = recognition;
 
-    // Cleanup function for this effect
     return () => {
       if (speechRecognitionRef.current) {
         speechRecognitionRef.current.stop();
-        speechRecognitionRef.current.onstart = null;
-        speechRecognitionRef.current.onresult = null;
-        speechRecognitionRef.current.onerror = null;
-        speechRecognitionRef.current.onend = null;
       }
     };
-  }, [hasMounted, isSpeechRecognitionAvailable, toast, addMessageToLog, isLoading, processUserInput]);
+  }, [hasMounted, toast, addMessageToLog, isLoading, processUserInput, selectedLanguage]);
 
+  // Effect for component unmount cleanup for speech synthesis
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel(); 
+      }
+    };
+  }, []);
 
-  // Effect for Speech Recognition "not supported" message
   useEffect(() => {
       if (!hasMounted || isSpeechRecognitionAvailable) return;
       if (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
@@ -264,7 +262,6 @@ export default function AssistantChat() {
       }
   }, [hasMounted, isSpeechRecognitionAvailable, toast]);
 
-  // Effect for Speech Synthesis "not supported" message
   useEffect(() => {
       if (!hasMounted || isSpeechSynthesisSupported) return;
       if (typeof window !== 'undefined' && !window.speechSynthesis) {
@@ -289,7 +286,6 @@ export default function AssistantChat() {
       if(hasMounted && !isSpeechRecognitionAvailable) {
         toast({ title: "Feature Not Supported", description: "Speech recognition is not available in your browser.", variant: "destructive" });
       } else if (hasMounted && !speechRecognitionRef.current) {
-         // This case might happen if the effect to initialize recognition hasn't run yet or failed silently.
         toast({ title: "Error", description: "Speech recognition is not initialized. Please refresh or check console.", variant: "destructive" });
       }
       return;
@@ -297,10 +293,23 @@ export default function AssistantChat() {
     if (isListening) {
       speechRecognitionRef.current?.stop();
     } else {
-      // Check for microphone permission before starting
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
-          speechRecognitionRef.current?.start();
+          try {
+            speechRecognitionRef.current?.start();
+          } catch (err) {
+            console.error("Error starting recognition:", err);
+             let errorMsg = "Could not start speech recognition.";
+             if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                 errorMsg = "Microphone access was denied by the browser or system."
+             } else if (err instanceof DOMException && err.name === 'InvalidStateError') {
+                 errorMsg = "Speech recognition is already active. Please wait."
+             }
+            setStatusMessage(errorMsg);
+            toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
+            addMessageToLog({ sender: 'system-status', text: errorMsg});
+            setIsListening(false); // Ensure state is reset
+          }
         })
         .catch(err => {
           setStatusMessage("Microphone access denied. Please enable permissions.");
@@ -401,8 +410,8 @@ export default function AssistantChat() {
             </Button>
           </div>
 
-          <div className="flex flex-col xs:flex-row items-center justify-between gap-3">
-             <div className="flex items-center justify-center space-x-2 p-2 border rounded-lg bg-card shadow-md min-w-[140px]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+             <div className="flex items-center justify-center sm:justify-start space-x-2 p-2 border rounded-lg bg-card shadow-md ">
                 {!hasMounted ? (
                   <>
                     <Switch id="audio-playback-switch-disabled" disabled checked={isAudioPlaybackEnabled} />
@@ -431,7 +440,7 @@ export default function AssistantChat() {
             {!hasMounted ? (
                  <Button
                     disabled={true}
-                    className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg"
+                    className="w-full h-14 text-lg rounded-lg shadow-lg"
                     aria-label="Loading microphone"
                 >
                     <Loader2 className="w-7 h-7 mr-2 animate-spin" />
@@ -441,7 +450,7 @@ export default function AssistantChat() {
                 <Button
                     onClick={toggleListening}
                     disabled={isLoading || !isSpeechRecognitionAvailable}
-                    className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
+                    className="w-full h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
                     aria-label={isListening ? "Stop listening" : "Start listening"}
                     variant={isListening ? "destructive" : "default"}
                 >
@@ -455,6 +464,30 @@ export default function AssistantChat() {
                     {isLoading && !isListening ? 'Processing...' : (isListening ? 'Listening...' : 'Tap to Talk')}
                 </Button>
             )}
+
+            <div className="flex items-center justify-center sm:justify-end">
+              {!hasMounted ? (
+                <div className="flex items-center space-x-2 p-2 border rounded-lg bg-card shadow-md text-muted-foreground cursor-not-allowed text-sm sm:text-base h-14 w-full">
+                  <Languages className="w-5 h-5 sm:w-6 sm:h-6 mr-1.5" /> Language...
+                </div>
+              ) : (
+                <Select value={selectedLanguage} onValueChange={setSelectedLanguage} disabled={isLoading || isListening}>
+                  <SelectTrigger className="w-full h-14 text-lg rounded-lg shadow-md">
+                    <div className="flex items-center">
+                      <Languages className="w-5 h-5 sm:w-6 sm:h-6 mr-1.5" />
+                      <SelectValue placeholder="Select language" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_LANGUAGES.map(lang => (
+                      <SelectItem key={lang.value} value={lang.value} className="text-lg">
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
         </div>
       </CardContent>
