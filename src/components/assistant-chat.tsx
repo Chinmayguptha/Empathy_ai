@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText, Info, Volume2, VolumeX } from 'lucide-react';
+import { Input } from '@/components/ui/input'; // Added Input
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, Info, Volume2, VolumeX, SendHorizonal } from 'lucide-react'; // Added SendHorizonal
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
-import { summarizeConversation, SummarizeConversationInput } from '@/ai/flows/conversation-summarizer';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { Switch } from '@/components/ui/switch';
@@ -36,10 +36,9 @@ const MAX_LOG_LENGTH = 20;
 export default function AssistantChat() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string>("Tap the microphone to talk");
+  const [statusMessage, setStatusMessage] = useState<string>("Tap the microphone or type your message");
   const [conversationLog, setConversationLog] = useState<ConversationMessage[]>([]);
-  const [conversationSummary, setConversationSummary] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState(""); // State for text input
   const speechRecognitionRef = useRef<CustomSpeechRecognition | null>(null);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -59,12 +58,12 @@ export default function AssistantChat() {
   }, [toast]);
 
   const playTextAsAudio = useCallback((text: string) => {
-    if (!isSpeechSynthesisSupported || !window.speechSynthesis) return;
+    if (!isAudioPlaybackEnabled || !isSpeechSynthesisSupported || !window.speechSynthesis) return;
     
-    window.speechSynthesis.cancel(); // Stop any currently playing/pending speech
+    window.speechSynthesis.cancel();
     
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US'; // You can make this configurable if needed
+    utterance.lang = 'en-US';
     utterance.onerror = (event) => {
       console.error("Speech synthesis error:", event.error);
       toast({
@@ -74,7 +73,7 @@ export default function AssistantChat() {
       });
     };
     window.speechSynthesis.speak(utterance);
-  }, [isSpeechSynthesisSupported, toast]);
+  }, [isAudioPlaybackEnabled, isSpeechSynthesisSupported, toast]);
 
   const addMessageToLog = useCallback((message: Omit<ConversationMessage, 'id' | 'timestamp'>) => {
     setConversationLog(prevLog => {
@@ -82,7 +81,6 @@ export default function AssistantChat() {
         ...prevLog,
         { ...message, id: Date.now().toString() + Math.random(), timestamp: new Date().toISOString() }
       ];
-      setConversationSummary(null);
       if (newLog.length > MAX_LOG_LENGTH) {
         return newLog.slice(newLog.length - MAX_LOG_LENGTH);
       }
@@ -103,11 +101,11 @@ export default function AssistantChat() {
     if (typeof window !== 'undefined') {
       const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognitionAPI) {
-        setStatusMessage("Speech recognition not supported in this browser.");
+        setStatusMessage("Speech recognition not supported. You can still type messages.");
         toast({
           title: "Browser Compatibility",
-          description: "Speech recognition is not available in your browser. Please try Chrome or Edge.",
-          variant: "destructive",
+          description: "Speech recognition is not available in your browser. Please try Chrome or Edge. You can still type messages.",
+          variant: "default",
         });
         return;
       }
@@ -133,10 +131,9 @@ export default function AssistantChat() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        // THIS IS THE CORRECTED LINE:
         if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
         if (finalTranscript) {
-          handleTranscription(finalTranscript.trim());
+          processUserInput(finalTranscript.trim());
         }
       };
 
@@ -144,7 +141,7 @@ export default function AssistantChat() {
         setIsListening(false);
         let errorMsg = "An error occurred during speech recognition.";
         if (event.error === 'no-speech') {
-          errorMsg = "No speech detected. Please try again.";
+          errorMsg = "No speech detected. Please try again or type your message.";
         } else if (event.error === 'audio-capture') {
           errorMsg = "Audio capture error. Check your microphone.";
         } else if (event.error === 'not-allowed') {
@@ -157,7 +154,7 @@ export default function AssistantChat() {
 
       recognition.onend = () => {
         setIsListening(false);
-        if (!isLoading && !isSummarizing) setStatusMessage("Tap the microphone to talk");
+        if (!isLoading) setStatusMessage("Tap the microphone or type your message");
       };
 
       speechRecognitionRef.current = recognition;
@@ -166,15 +163,15 @@ export default function AssistantChat() {
     return () => {
       speechRecognitionRef.current?.stop();
       if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel(); // Cancel any speech on component unmount
+        window.speechSynthesis.cancel();
       }
     };
-  }, [toast, addMessageToLog, isLoading, isSummarizing]);
+  }, [toast, addMessageToLog, isLoading]);
 
-  const handleTranscription = async (text: string) => {
+  const processUserInput = async (text: string) => {
     if (!text) {
-      setStatusMessage("No speech detected. Tap to try again.");
-      setIsListening(false);
+      setStatusMessage("No input detected. Tap microphone or type and send.");
+      setIsListening(false); // ensure listening stops if it was voice input
       return;
     }
 
@@ -214,60 +211,24 @@ export default function AssistantChat() {
       });
     } finally {
       setIsLoading(false);
-      setStatusMessage("Tap the microphone to talk");
+      setStatusMessage("Tap the microphone or type your message");
     }
   };
 
-  const handleSummarizeConversation = async () => {
-    const messagesToSummarize: SummarizeConversationInput['messages'] = conversationLog
-      .filter(msg => msg.sender === 'user' || msg.sender === 'ai')
-      .map(msg => ({ sender: msg.sender as 'user' | 'ai', text: msg.text }));
-
-    if (messagesToSummarize.length === 0) {
-      toast({
-        title: "Cannot Summarize",
-        description: "There are no messages in the conversation to summarize.",
-        variant: "default"
-      });
-      return;
-    }
-
-    setIsSummarizing(true);
-    setStatusMessage("Summarizing conversation...");
-    setConversationSummary(null); 
-    addMessageToLog({ sender: 'system-status', text: "Summarizing conversation..."});
-
-    try {
-      const summaryResult = await summarizeConversation({ messages: messagesToSummarize });
-      setConversationSummary(summaryResult.summary);
-      addMessageToLog({ sender: 'system-status', text: "Summarization complete."});
-      toast({
-        title: "Summary Generated",
-        description: "Conversation summary has been created.",
-        variant: "default"
-      });
-    } catch (error) {
-      console.error("Summarization error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error during summarization";
-      addMessageToLog({ sender: 'system-status', text: `Error summarizing: ${errorMessage}`});
-      toast({
-        title: "Summarization Error",
-        description: "Could not summarize the conversation.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSummarizing(false);
-      setStatusMessage("Tap the microphone to talk");
+  const handleSendTextMessage = () => {
+    if (textInput.trim()) {
+      processUserInput(textInput.trim());
+      setTextInput(""); // Clear input after sending
     }
   };
 
   const toggleListening = () => {
-    if (!speechRecognitionRef.current) {
-      toast({ title: "Error", description: "Speech recognition is not initialized.", variant: "destructive" });
-      return;
+    if (!speechRecognitionRef.current && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
+        toast({ title: "Error", description: "Speech recognition is not supported or not initialized.", variant: "destructive" });
+        return;
     }
     if (isListening) {
-      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current?.stop();
     } else {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
@@ -294,7 +255,8 @@ export default function AssistantChat() {
     }
   };
 
-  const canSummarize = conversationLog.some(msg => msg.sender === 'user' || msg.sender === 'ai');
+  const isSpeechRecognitionAvailable = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
 
   return (
     <Card className="w-full max-w-2xl shadow-2xl rounded-xl">
@@ -347,33 +309,35 @@ export default function AssistantChat() {
             </div>
           ))}
         </ScrollArea>
-
-        {conversationSummary && (
-          <Alert className="mt-4 shadow">
-            <FileText className="h-5 w-5" />
-            <AlertTitle className="font-semibold">Conversation Summary</AlertTitle>
-            <AlertDescription className="text-base">
-              {conversationSummary}
-            </AlertDescription>
-          </Alert>
-        )}
         
-        <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex gap-3 flex-col xs:flex-row sm:flex-grow-[0.6] "> 
-              <Button
-                  onClick={handleSummarizeConversation}
-                  disabled={isLoading || isSummarizing || !canSummarize}
-                  className="w-full xs:w-auto flex-grow text-lg rounded-lg shadow-md"
-                  variant="outline"
-              >
-                  {isSummarizing ? (
-                      <Loader2 className="w-6 h-6 mr-2 animate-spin" />
-                  ) : (
-                      <FileText className="w-6 h-6 mr-2" />
-                  )}
-                  {isSummarizing ? 'Summarizing...' : 'Summarize'}
-              </Button>
-              <div className="flex items-center justify-center space-x-2 p-2 border rounded-lg bg-card shadow-md flex-grow xs:flex-grow-0 min-w-[140px]">
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-2 items-stretch">
+            <Input
+              type="text"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="Type your message..."
+              className="flex-grow text-lg rounded-lg shadow-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault(); // Prevents newline in input
+                  handleSendTextMessage();
+                }
+              }}
+              disabled={isLoading || isListening}
+            />
+            <Button
+              onClick={handleSendTextMessage}
+              disabled={isLoading || isListening || !textInput.trim()}
+              className="text-lg rounded-lg shadow-md px-4"
+              aria-label="Send message"
+            >
+              <SendHorizonal className="w-6 h-6" />
+            </Button>
+          </div>
+
+          <div className="flex flex-col xs:flex-row items-center justify-between gap-3">
+             <div className="flex items-center justify-center space-x-2 p-2 border rounded-lg bg-card shadow-md min-w-[140px]">
                 <Switch
                   id="audio-playback-switch"
                   checked={isAudioPlaybackEnabled}
@@ -386,26 +350,27 @@ export default function AssistantChat() {
                   <span className="ml-1.5 hidden sm:inline">Audio</span>
                 </Label>
               </div>
-            </div>
             <Button
                 onClick={toggleListening}
-                disabled={isLoading || isSummarizing || (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))}
-                className="w-full sm:flex-grow-[0.4] h-16 text-xl rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
+                disabled={isLoading || !isSpeechRecognitionAvailable}
+                className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
                 aria-label={isListening ? "Stop listening" : "Start listening"}
+                variant={isListening ? "destructive" : "default"}
             >
-                {isListening ? (
-                    <MicOff className="w-8 h-8 mr-2 animate-pulse" />
+                {isLoading && !isListening ? (
+                    <Loader2 className="w-7 h-7 mr-2 animate-spin" />
+                ) : isListening ? (
+                    <MicOff className="w-7 h-7 mr-2 animate-pulse" />
                 ) : (
-                    <Mic className="w-8 h-8 mr-2" />
+                    <Mic className="w-7 h-7 mr-2" />
                 )}
-                {isListening ? 'Listening...' : (isLoading || isSummarizing ? 'Processing...' : 'Tap to Talk')}
+                {isLoading && !isListening ? 'Processing...' : (isListening ? 'Listening...' : 'Tap to Talk')}
             </Button>
+          </div>
         </div>
-
       </CardContent>
     </Card>
   );
 }
-    
 
-    
+  
