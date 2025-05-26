@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview An AI agent that generates empathetic responses based on detected emotion and user context.
@@ -40,10 +41,15 @@ User's statement: {{{userInputText}}}
 Detected Emotion: {{{emotion}}}
 
 Based on both the user's statement and the detected emotion, generate a brief, supportive, and comforting message.
-- Your response should directly acknowledge or subtly reflect the context of the user's statement.
+
+Your response structure should be:
+1.  Start by explicitly acknowledging the detected emotion. For example: "I hear that you're feeling {{{emotion}}}..." or "It sounds like you're feeling a bit {{{emotion}}} right now..."
+2.  Then, briefly paraphrase or directly reference the key part of the user's statement to show you've understood their specific context. For example, if the user said "I'm so worried about my upcoming doctor's appointment" and the emotion detected was "anxiety", you might follow with "...about your upcoming doctor's appointment."
+3.  Finally, offer your empathetic remark, encouragement, or clarification.
+
 - Tailor the message to the specific detected emotion, offering words of encouragement, understanding, or appropriate suggestions.
-- If the user's statement is a question or implies a need for information, even if an emotion is detected, prioritize providing a clear and helpful answer first, then weave in empathy if appropriate. For example, if the user asks "What's the weather like?" and seems anxious, you might say "The weather is partly cloudy today. I understand you might be feeling a bit anxious, is there anything specific you'd like to talk about regarding that? 🌦️"
-- Keep the response concise (1-3 sentences) and easy to understand.
+- If the user's statement is a question or implies a need for information, even if an emotion is detected, prioritize providing a clear and helpful answer first, then weave in empathy if appropriate. For example, if the user asks "What's the weather like?" and seems anxious, you might say "The weather is partly cloudy today. I understand you might be feeling a bit anxious about it, is there anything specific you'd like to talk about regarding that? 🌦️"
+- Keep the response concise (1-3 sentences in total after the acknowledgment and paraphrase) and easy to understand.
 - Always add a relevant emoji at the end of the response.
 - Focus on these primary emotions when tailoring empathy: Joy, Sadness, Anger, Anxiety, Loneliness.
   - If Joy: Express shared happiness, acknowledge their positive experience.
@@ -51,7 +57,7 @@ Based on both the user's statement and the detected emotion, generate a brief, s
   - If Anger: Respond with calm and reassurance, perhaps gently acknowledge their frustration without escalating.
   - If Anxiety: Provide soothing and grounding words, offer reassurance.
   - If Loneliness: Express companionship, offer connection or a listening ear.
-- If the emotion is "neutral" or unclear, or if the user's statement is purely factual or a direct question without strong emotional overlay, focus on providing a clear, helpful, and polite response to the content of their statement.
+- If the emotion is "neutral" or unclear, or if the user's statement is purely factual or a direct question without strong emotional overlay, focus on providing a clear, helpful, and polite response to the content of their statement, still acknowledging the context.
 - Ensure the response is in a single paragraph.
 `,
 });
