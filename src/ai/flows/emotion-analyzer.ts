@@ -1,4 +1,3 @@
-// Emotion analyzer
 'use server';
 
 /**
@@ -21,7 +20,7 @@ const AnalyzeEmotionOutputSchema = z.object({
   emotion: z
     .string()
     .describe(
-      'The predominant emotion detected in the text (e.g., happiness, sadness, anger).'      
+      'The predominant emotion detected in the text (e.g., happiness, sadness, anger, neutral).'
     ),
   confidence: z
     .number()
@@ -37,7 +36,7 @@ const prompt = ai.definePrompt({
   name: 'analyzeEmotionPrompt',
   input: {schema: AnalyzeEmotionInputSchema},
   output: {schema: AnalyzeEmotionOutputSchema},
-  prompt: `You are an AI emotion analyzer. Analyze the following text and determine the predominant emotion.  Also, provide a confidence level (0 to 1) for your analysis.\n\nText: {{{text}}}`,
+  prompt: `You are an AI emotion analyzer. Your task is to carefully analyze the following text to identify the underlying emotion, even if no explicit emotion words (like "happy", "sad", "angry") are used. Consider the phrasing, implications, and subtle cues within the text to determine the most likely predominant emotion. If the text is purely factual or a question without clear emotional tone, classify it as "neutral". Also, provide a confidence level (0 to 1) for your analysis.\n\nText: {{{text}}}`,
 });
 
 const analyzeEmotionFlow = ai.defineFlow(

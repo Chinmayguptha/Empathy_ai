@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText } from 'lucide-react';
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText, Info } from 'lucide-react';
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
 import { summarizeConversation, SummarizeConversationInput } from '@/ai/flows/conversation-summarizer';
@@ -156,7 +156,10 @@ export default function AssistantChat() {
       setStatusMessage("Generating response...");
       addMessageToLog({ sender: 'system-status', text: "Generating empathetic response..."});
 
-      const empatheticResponseResult = await generateEmpatheticResponse({ emotion: emotionResult.emotion });
+      const empatheticResponseResult = await generateEmpatheticResponse({ 
+        emotion: emotionResult.emotion,
+        userInputText: text 
+      });
       addMessageToLog({ sender: 'ai', text: empatheticResponseResult.response, emotion: emotionResult.emotion });
       
     } catch (error) {
@@ -240,11 +243,12 @@ export default function AssistantChat() {
   const getEmotionIcon = (emotion?: string) => {
     if (!emotion) return <Bot className="w-6 h-6 text-primary" />;
     switch (emotion.toLowerCase()) {
-      case 'joy': case 'happy': return <Smile className="w-6 h-6 text-yellow-500" />;
+      case 'joy': case 'happy': case 'happiness': return <Smile className="w-6 h-6 text-yellow-500" />;
       case 'sadness': case 'sad': return <Frown className="w-6 h-6 text-blue-500" />;
       case 'anger': case 'angry': return <Angry className="w-6 h-6 text-red-500" />;
       case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />;
-      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />;
+      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />; // Consider a more specific icon if available
+      case 'neutral': return <Info className="w-6 h-6 text-gray-400" />;
       default: return <Brain className="w-6 h-6 text-gray-500" />;
     }
   };
