@@ -1,12 +1,15 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, FileText } from 'lucide-react';
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
+import { summarizeConversation, SummarizeConversationInput } from '@/ai/flows/conversation-summarizer';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
@@ -18,7 +21,6 @@ interface ConversationMessage {
   emotion?: string;
 }
 
-// Extend SpeechRecognitionEvent if necessary for types not available in standard lib.dom.d.ts
 interface CustomSpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
   resultIndex: number;
@@ -27,14 +29,15 @@ interface CustomSpeechRecognition extends SpeechRecognition {
   onresult: (event: CustomSpeechRecognitionEvent) => void;
 }
 
-
 const MAX_LOG_LENGTH = 20;
 
 export default function AssistantChat() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("Tap the microphone to talk");
   const [conversationLog, setConversationLog] = useState<ConversationMessage[]>([]);
+  const [conversationSummary, setConversationSummary] = useState<string | null>(null);
   const speechRecognitionRef = useRef<CustomSpeechRecognition | null>(null);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -45,6 +48,8 @@ export default function AssistantChat() {
         ...prevLog,
         { ...message, id: Date.now().toString() + Math.random(), timestamp: new Date().toISOString() }
       ];
+      // Clear summary when new messages are added
+      setConversationSummary(null);
       if (newLog.length > MAX_LOG_LENGTH) {
         return newLog.slice(newLog.length - MAX_LOG_LENGTH);
       }
@@ -95,7 +100,7 @@ export default function AssistantChat() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
+        if (interimTranscript) setStatusMessage(\`Listening... ${interimTranscript}\`);
         if (finalTranscript) {
           handleTranscription(finalTranscript.trim());
         }
@@ -112,13 +117,13 @@ export default function AssistantChat() {
           errorMsg = "Microphone access denied. Please enable microphone permissions.";
         }
         setStatusMessage(errorMsg);
-        addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
+        addMessageToLog({ sender: 'system-status', text: \`Error: ${errorMsg}\`});
         toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
       };
 
       recognition.onend = () => {
         setIsListening(false);
-        if (!isLoading) setStatusMessage("Tap the microphone to talk");
+        if (!isLoading && !isSummarizing) setStatusMessage("Tap the microphone to talk");
       };
 
       speechRecognitionRef.current = recognition;
@@ -127,7 +132,7 @@ export default function AssistantChat() {
     return () => {
       speechRecognitionRef.current?.stop();
     };
-  }, [toast, addMessageToLog, isLoading]);
+  }, [toast, addMessageToLog, isLoading, isSummarizing]);
 
   const handleTranscription = async (text: string) => {
     if (!text) {
@@ -145,7 +150,7 @@ export default function AssistantChat() {
       const emotionResult = await analyzeEmotion({ text });
       addMessageToLog({
         sender: 'system-emotion',
-        text: `Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)`,
+        text: \`Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)\`,
         emotion: emotionResult.emotion,
       });
       setStatusMessage("Generating response...");
@@ -157,7 +162,7 @@ export default function AssistantChat() {
     } catch (error) {
       console.error("AI processing error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addMessageToLog({ sender: 'system-status', text: `Error generating response: ${errorMessage}` });
+      addMessageToLog({ sender: 'system-status', text: \`Error generating response: ${errorMessage}\` });
       toast({
         title: "AI Error",
         description: "Could not get response from AI.",
@@ -165,6 +170,49 @@ export default function AssistantChat() {
       });
     } finally {
       setIsLoading(false);
+      setStatusMessage("Tap the microphone to talk");
+    }
+  };
+
+  const handleSummarizeConversation = async () => {
+    const messagesToSummarize: SummarizeConversationInput['messages'] = conversationLog
+      .filter(msg => msg.sender === 'user' || msg.sender === 'ai')
+      .map(msg => ({ sender: msg.sender as 'user' | 'ai', text: msg.text }));
+
+    if (messagesToSummarize.length === 0) {
+      toast({
+        title: "Cannot Summarize",
+        description: "There are no messages in the conversation to summarize.",
+        variant: "default"
+      });
+      return;
+    }
+
+    setIsSummarizing(true);
+    setStatusMessage("Summarizing conversation...");
+    setConversationSummary(null); 
+    addMessageToLog({ sender: 'system-status', text: "Summarizing conversation..."});
+
+    try {
+      const summaryResult = await summarizeConversation({ messages: messagesToSummarize });
+      setConversationSummary(summaryResult.summary);
+      addMessageToLog({ sender: 'system-status', text: "Summarization complete."});
+      toast({
+        title: "Summary Generated",
+        description: "Conversation summary has been created.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error("Summarization error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error during summarization";
+      addMessageToLog({ sender: 'system-status', text: \`Error summarizing: ${errorMessage}\`});
+      toast({
+        title: "Summarization Error",
+        description: "Could not summarize the conversation.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSummarizing(false);
       setStatusMessage("Tap the microphone to talk");
     }
   };
@@ -177,7 +225,6 @@ export default function AssistantChat() {
     if (isListening) {
       speechRecognitionRef.current.stop();
     } else {
-      // Check for microphone permission before starting
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           speechRecognitionRef.current?.start();
@@ -196,11 +243,13 @@ export default function AssistantChat() {
       case 'joy': case 'happy': return <Smile className="w-6 h-6 text-yellow-500" />;
       case 'sadness': case 'sad': return <Frown className="w-6 h-6 text-blue-500" />;
       case 'anger': case 'angry': return <Angry className="w-6 h-6 text-red-500" />;
-      case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />; // Using AlertCircle for anxiety
-      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />; // Using Bot icon for loneliness to signify companionship
+      case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />;
+      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />;
       default: return <Brain className="w-6 h-6 text-gray-500" />;
     }
   };
+
+  const canSummarize = conversationLog.some(msg => msg.sender === 'user' || msg.sender === 'ai');
 
   return (
     <Card className="w-full max-w-2xl shadow-2xl rounded-xl">
@@ -211,7 +260,7 @@ export default function AssistantChat() {
         <p className="text-muted-foreground text-lg min-h-[28px]">{statusMessage}</p>
       </CardHeader>
       <CardContent className="flex flex-col gap-6 p-6">
-        <ScrollArea className="h-[400px] w-full border rounded-lg p-4 bg-background" ref={scrollAreaRef}>
+        <ScrollArea className="h-[350px] w-full border rounded-lg p-4 bg-background" ref={scrollAreaRef}>
           {conversationLog.length === 0 && (
             <p className="text-center text-muted-foreground text-lg py-10">
               Your conversation will appear here.
@@ -220,18 +269,18 @@ export default function AssistantChat() {
           {conversationLog.map((msg) => (
             <div
               key={msg.id}
-              className={`flex mb-3 text-lg ${
+              className={\`flex mb-3 text-lg ${
                 msg.sender === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+              }\`}
             >
               <div
-                className={`p-3 rounded-lg max-w-[80%] shadow-md ${
+                className={\`p-3 rounded-lg max-w-[80%] shadow-md ${
                   msg.sender === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : msg.sender === 'ai'
                     ? 'bg-secondary text-secondary-foreground'
                     : 'bg-muted text-muted-foreground text-sm italic w-full text-center'
-                }`}
+                }\`}
               >
                 {msg.sender === 'ai' && (
                   <div className="flex items-center mb-1">
@@ -246,27 +295,56 @@ export default function AssistantChat() {
                   </div>
                 )}
                 {msg.sender !== 'system-emotion' && <p className="whitespace-pre-wrap">{msg.text}</p>}
-                <p className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/70' : msg.sender === 'ai' ? 'text-secondary-foreground/70' : 'text-muted-foreground/70'} ${msg.sender === 'system-status' || msg.sender === 'system-emotion' ? 'text-center' : (msg.sender === 'user' ? 'text-right' : 'text-left')}`}>
+                <p className={\`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/70' : msg.sender === 'ai' ? 'text-secondary-foreground/70' : 'text-muted-foreground/70'} ${msg.sender === 'system-status' || msg.sender === 'system-emotion' ? 'text-center' : (msg.sender === 'user' ? 'text-right' : 'text-left')}\`}>
                   {format(new Date(msg.timestamp), 'p')}
                 </p>
               </div>
             </div>
           ))}
         </ScrollArea>
-        <Button
-          onClick={toggleListening}
-          disabled={isLoading || (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))}
-          className="w-full h-20 text-2xl rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
-          aria-label={isListening ? "Stop listening" : "Start listening"}
-        >
-          {isListening ? (
-            <MicOff className="w-10 h-10 mr-3 animate-pulse" />
-          ) : (
-            <Mic className="w-10 h-10 mr-3" />
-          )}
-          {isListening ? 'Listening...' : (isLoading ? 'Processing...' : 'Tap to Talk')}
-        </Button>
+
+        {conversationSummary && (
+          <Alert className="mt-4 shadow">
+            <FileText className="h-5 w-5" />
+            <AlertTitle className="font-semibold">Conversation Summary</AlertTitle>
+            <AlertDescription className="text-base">
+              {conversationSummary}
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+                onClick={handleSummarizeConversation}
+                disabled={isLoading || isSummarizing || !canSummarize}
+                className="w-full sm:w-auto flex-grow text-lg rounded-lg shadow-md"
+                variant="outline"
+            >
+                {isSummarizing ? (
+                    <Loader2 className="w-6 h-6 mr-2 animate-spin" />
+                ) : (
+                    <FileText className="w-6 h-6 mr-2" />
+                )}
+                {isSummarizing ? 'Summarizing...' : 'Summarize Chat'}
+            </Button>
+            <Button
+                onClick={toggleListening}
+                disabled={isLoading || isSummarizing || (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))}
+                className="w-full sm:w-auto flex-grow h-16 text-xl rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
+                aria-label={isListening ? "Stop listening" : "Start listening"}
+            >
+                {isListening ? (
+                    <MicOff className="w-8 h-8 mr-2 animate-pulse" />
+                ) : (
+                    <Mic className="w-8 h-8 mr-2" />
+                )}
+                {isListening ? 'Listening...' : (isLoading || isSummarizing ? 'Processing...' : 'Tap to Talk')}
+            </Button>
+        </div>
+
       </CardContent>
     </Card>
   );
 }
+
+    
