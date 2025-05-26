@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, Info, Volume2, VolumeX, SendHorizonal, FileText } from 'lucide-react';
+import { Mic, MicOff, MessageSquare, Brain, Smile, Frown, Angry, AlertCircle, Bot, Loader2, Info, Volume2, VolumeX, SendHorizonal } from 'lucide-react';
 import { analyzeEmotion } from '@/ai/flows/emotion-analyzer';
 import { generateEmpatheticResponse } from '@/ai/flows/empathetic-response-generator';
 import { useToast } from '@/hooks/use-toast';
@@ -61,6 +61,7 @@ export default function AssistantChat() {
       setIsSpeechSynthesisSupported(false);
       if (isAudioPlaybackEnabled) { // if it was enabled, but now we know it's not supported
         setIsAudioPlaybackEnabled(false);
+        // No toast here, as another useEffect handles the user-facing message.
       }
     }
   }, [hasMounted, isAudioPlaybackEnabled]);
@@ -73,9 +74,10 @@ export default function AssistantChat() {
       setIsSpeechRecognitionAvailable(true);
     } else {
       setIsSpeechRecognitionAvailable(false);
+      // No toast here, as another useEffect handles the user-facing message.
     }
   }, [hasMounted]);
-
+  
   // Effect for component unmount cleanup for speech synthesis
   useEffect(() => {
     return () => {
@@ -135,8 +137,7 @@ export default function AssistantChat() {
 
     addMessageToLog({ sender: 'user', text });
     setIsLoading(true);
-    setStatusMessage("Analyzing emotion...");
-    addMessageToLog({ sender: 'system-status', text: "Analyzing emotion..."});
+    setStatusMessage("Thinking..."); // General status update
 
     try {
       const emotionResult = await analyzeEmotion({ text });
@@ -145,8 +146,6 @@ export default function AssistantChat() {
         text: `Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)`,
         emotion: emotionResult.emotion,
       });
-      setStatusMessage("Generating response...");
-      addMessageToLog({ sender: 'system-status', text: "Generating empathetic response..."});
 
       const empatheticResponseResult = await generateEmpatheticResponse({ 
         emotion: emotionResult.emotion,
@@ -179,8 +178,17 @@ export default function AssistantChat() {
     if (!hasMounted || !isSpeechRecognitionAvailable) return;
 
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) return;
+    if (!SpeechRecognitionAPI) return; // Should be covered by isSpeechRecognitionAvailable check
 
+    // Ensure speechRecognitionRef.current is not already set or is stopped
+    if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+        speechRecognitionRef.current.onstart = null;
+        speechRecognitionRef.current.onresult = null;
+        speechRecognitionRef.current.onerror = null;
+        speechRecognitionRef.current.onend = null;
+    }
+    
     const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -189,7 +197,6 @@ export default function AssistantChat() {
     recognition.onstart = () => {
       setIsListening(true);
       setStatusMessage("Listening...");
-      addMessageToLog({ sender: 'system-status', text: "Listening started..." });
     };
 
     recognition.onresult = (event: CustomSpeechRecognitionEvent) => {
@@ -202,7 +209,8 @@ export default function AssistantChat() {
           interimTranscript += event.results[i][0].transcript;
         }
       }
-      if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
+      // THIS IS THE LINE THAT WAS CAUSING PARSING ERRORS. ENSURE IT'S CLEAN.
+      if (interimTranscript) setStatusMessage(\`Listening... ${interimTranscript}\`);
       if (finalTranscript) {
         processUserInput(finalTranscript.trim());
       }
@@ -225,7 +233,6 @@ export default function AssistantChat() {
 
     recognition.onend = () => {
       setIsListening(false);
-      // Only reset status message if not currently loading an AI response
       if (!isLoading) {
         setStatusMessage("Tap the microphone or type your message");
       }
@@ -233,10 +240,10 @@ export default function AssistantChat() {
 
     speechRecognitionRef.current = recognition;
 
+    // Cleanup function for this effect
     return () => {
+      // No window.speechSynthesis.cancel() here, moved to separate unmount effect
       speechRecognitionRef.current?.stop();
-      // Removed: window.speechSynthesis.cancel(); -- This was causing interruptions.
-      // It's handled by playTextAsAudio before new speech and by a separate unmount effect.
     };
   }, [hasMounted, isSpeechRecognitionAvailable, toast, addMessageToLog, isLoading, processUserInput]); 
 
@@ -244,7 +251,7 @@ export default function AssistantChat() {
   // Effect for Speech Recognition "not supported" message
   useEffect(() => {
       if (!hasMounted || isSpeechRecognitionAvailable) return;
-       // Show message only if hasMounted is true AND feature is not available
+      // Show message only if hasMounted is true AND feature is not available
       if (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
           setStatusMessage("Speech recognition not supported. You can still type messages.");
           toast({
@@ -279,14 +286,17 @@ export default function AssistantChat() {
     if (!hasMounted || !isSpeechRecognitionAvailable || !speechRecognitionRef.current) {
       if(hasMounted && !isSpeechRecognitionAvailable) {
         toast({ title: "Feature Not Supported", description: "Speech recognition is not available in your browser.", variant: "destructive" });
-      } else {
-        toast({ title: "Error", description: "Speech recognition is not initialized.", variant: "destructive" });
+      } else if (hasMounted && !speechRecognitionRef.current) {
+         // This case could happen if speechRecognitionRef.current wasn't set up yet, or an error occurred.
+        toast({ title: "Error", description: "Speech recognition is not initialized. Please refresh or check console.", variant: "destructive" });
       }
       return;
     }
     if (isListening) {
       speechRecognitionRef.current?.stop();
     } else {
+      // Request microphone permission each time before starting if not already granted
+      // Note: Most browsers remember permission once granted for a session or permanently.
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           speechRecognitionRef.current?.start();
@@ -450,4 +460,3 @@ export default function AssistantChat() {
     </Card>
   );
 }
-
