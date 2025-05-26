@@ -100,7 +100,7 @@ export default function AssistantChat() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        if (interimTranscript) setStatusMessage(\`Listening... ${interimTranscript}\`);
+        if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
         if (finalTranscript) {
           handleTranscription(finalTranscript.trim());
         }
@@ -117,7 +117,7 @@ export default function AssistantChat() {
           errorMsg = "Microphone access denied. Please enable microphone permissions.";
         }
         setStatusMessage(errorMsg);
-        addMessageToLog({ sender: 'system-status', text: \`Error: ${errorMsg}\`});
+        addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
         toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
       };
 
@@ -150,7 +150,7 @@ export default function AssistantChat() {
       const emotionResult = await analyzeEmotion({ text });
       addMessageToLog({
         sender: 'system-emotion',
-        text: \`Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)\`,
+        text: `Detected Emotion: ${emotionResult.emotion} (Confidence: ${(emotionResult.confidence * 100).toFixed(0)}%)`,
         emotion: emotionResult.emotion,
       });
       setStatusMessage("Generating response...");
@@ -162,7 +162,7 @@ export default function AssistantChat() {
     } catch (error) {
       console.error("AI processing error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      addMessageToLog({ sender: 'system-status', text: \`Error generating response: ${errorMessage}\` });
+      addMessageToLog({ sender: 'system-status', text: `Error generating response: ${errorMessage}` });
       toast({
         title: "AI Error",
         description: "Could not get response from AI.",
@@ -205,7 +205,7 @@ export default function AssistantChat() {
     } catch (error) {
       console.error("Summarization error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error during summarization";
-      addMessageToLog({ sender: 'system-status', text: \`Error summarizing: ${errorMessage}\`});
+      addMessageToLog({ sender: 'system-status', text: `Error summarizing: ${errorMessage}`});
       toast({
         title: "Summarization Error",
         description: "Could not summarize the conversation.",
@@ -269,18 +269,18 @@ export default function AssistantChat() {
           {conversationLog.map((msg) => (
             <div
               key={msg.id}
-              className={\`flex mb-3 text-lg ${
+              className={`flex mb-3 text-lg ${
                 msg.sender === 'user' ? 'justify-end' : 'justify-start'
-              }\`}
+              }`}
             >
               <div
-                className={\`p-3 rounded-lg max-w-[80%] shadow-md ${
+                className={`p-3 rounded-lg max-w-[80%] shadow-md ${
                   msg.sender === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : msg.sender === 'ai'
                     ? 'bg-secondary text-secondary-foreground'
                     : 'bg-muted text-muted-foreground text-sm italic w-full text-center'
-                }\`}
+                }`}
               >
                 {msg.sender === 'ai' && (
                   <div className="flex items-center mb-1">
@@ -295,7 +295,7 @@ export default function AssistantChat() {
                   </div>
                 )}
                 {msg.sender !== 'system-emotion' && <p className="whitespace-pre-wrap">{msg.text}</p>}
-                <p className={\`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/70' : msg.sender === 'ai' ? 'text-secondary-foreground/70' : 'text-muted-foreground/70'} ${msg.sender === 'system-status' || msg.sender === 'system-emotion' ? 'text-center' : (msg.sender === 'user' ? 'text-right' : 'text-left')}\`}>
+                <p className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/70' : msg.sender === 'ai' ? 'text-secondary-foreground/70' : 'text-muted-foreground/70'} ${msg.sender === 'system-status' || msg.sender === 'system-emotion' ? 'text-center' : (msg.sender === 'user' ? 'text-right' : 'text-left')}`}>
                   {format(new Date(msg.timestamp), 'p')}
                 </p>
               </div>
@@ -346,5 +346,4 @@ export default function AssistantChat() {
     </Card>
   );
 }
-
     
