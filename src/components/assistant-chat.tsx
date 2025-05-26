@@ -133,6 +133,7 @@ export default function AssistantChat() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
+        // THIS IS THE CORRECTED LINE:
         if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
         if (finalTranscript) {
           handleTranscription(finalTranscript.trim());
@@ -405,4 +406,6 @@ export default function AssistantChat() {
     </Card>
   );
 }
+    
+
     
