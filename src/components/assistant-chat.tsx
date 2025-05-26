@@ -58,20 +58,18 @@ export default function AssistantChat() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       setIsSpeechSynthesisSupported(true);
     } else if (typeof window !== 'undefined') {
-      // setIsSpeechSynthesisSupported(false); // Initial state is already false
-      // Toast can be shown in a separate effect if needed or here if toast itself is stable
+      setIsSpeechSynthesisSupported(false); // Ensure it's explicitly false if not found
     }
   }, [hasMounted]);
 
   // Effect to determine Speech Recognition Support
   useEffect(() => {
     if (!hasMounted) return;
-
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognitionAPI) {
       setIsSpeechRecognitionAvailable(true);
     } else {
-      // setIsSpeechRecognitionAvailable(false); // Initial state is already false
+      setIsSpeechRecognitionAvailable(false); // Ensure it's explicitly false if not found
     }
   }, [hasMounted]);
 
@@ -154,7 +152,7 @@ export default function AssistantChat() {
       addMessageToLog({ sender: 'system-status', text: `Error generating response: ${errorMessage}` });
       toast({
         title: "AI Error",
-        description: "Could not get response from AI.",
+        description: `Could not get response from AI: ${errorMessage}`,
         variant: "destructive",
       });
     } finally {
@@ -166,74 +164,77 @@ export default function AssistantChat() {
 
   // Effect to show compatibility messages and set up Speech Recognition instance
   useEffect(() => {
-    if (!hasMounted) return;
+    if (!hasMounted || !isSpeechRecognitionAvailable) return; // Don't run if not mounted or feature not available
 
-    if (isSpeechRecognitionAvailable) {
-      const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (!SpeechRecognitionAPI) return; // Should not happen if isSpeechRecognitionAvailable is true
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    // This check is technically redundant due to isSpeechRecognitionAvailable but good for safety
+    if (!SpeechRecognitionAPI) return;
 
-      const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
+    const recognition = new SpeechRecognitionAPI() as CustomSpeechRecognition;
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setStatusMessage("Listening...");
-        addMessageToLog({ sender: 'system-status', text: "Listening started..." });
-      };
+    recognition.onstart = () => {
+      setIsListening(true);
+      setStatusMessage("Listening...");
+      addMessageToLog({ sender: 'system-status', text: "Listening started..." });
+    };
 
-      recognition.onresult = (event: CustomSpeechRecognitionEvent) => {
-        let interimTranscript = "";
-        let finalTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+    recognition.onresult = (event: CustomSpeechRecognitionEvent) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
         }
-        if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
-        if (finalTranscript) {
-          processUserInput(finalTranscript.trim());
-        }
-      };
+      }
+      // THIS IS THE LINE THAT WAS CAUSING PARSING ERRORS. ENSURE IT'S CLEAN.
+      if (interimTranscript) setStatusMessage(`Listening... ${interimTranscript}`);
+      if (finalTranscript) {
+        processUserInput(finalTranscript.trim());
+      }
+    };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        setIsListening(false);
-        let errorMsg = "An error occurred during speech recognition.";
-        if (event.error === 'no-speech') {
-          errorMsg = "No speech detected. Please try again or type your message.";
-        } else if (event.error === 'audio-capture') {
-          errorMsg = "Audio capture error. Check your microphone.";
-        } else if (event.error === 'not-allowed') {
-          errorMsg = "Microphone access denied. Please enable microphone permissions.";
-        }
-        setStatusMessage(errorMsg);
-        addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
-        toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
-      };
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false);
+      let errorMsg = "An error occurred during speech recognition.";
+      if (event.error === 'no-speech') {
+        errorMsg = "No speech detected. Please try again or type your message.";
+      } else if (event.error === 'audio-capture') {
+        errorMsg = "Audio capture error. Check your microphone.";
+      } else if (event.error === 'not-allowed') {
+        errorMsg = "Microphone access denied. Please enable microphone permissions.";
+      }
+      setStatusMessage(errorMsg);
+      addMessageToLog({ sender: 'system-status', text: `Error: ${errorMsg}`});
+      toast({ title: "Speech Recognition Error", description: errorMsg, variant: "destructive" });
+    };
 
-      recognition.onend = () => {
-        setIsListening(false);
-        // Only reset status message if not currently loading a response
-        if (!isLoading) setStatusMessage("Tap the microphone or type your message");
-      };
+    recognition.onend = () => {
+      setIsListening(false);
+      if (!isLoading) setStatusMessage("Tap the microphone or type your message");
+    };
 
-      speechRecognitionRef.current = recognition;
+    speechRecognitionRef.current = recognition;
 
-      return () => {
-        speechRecognitionRef.current?.stop();
-        // Cancel speech synthesis on component unmount is good practice
-        if (typeof window !== 'undefined' && window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-        }
-      };
-    } else {
-      // This block runs if hasMounted is true, but isSpeechRecognitionAvailable is false
-      // (meaning the API wasn't found in the previous effect).
-      // This is where to put the "not supported" message.
-      if (typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) ) {
+    return () => {
+      speechRecognitionRef.current?.stop();
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  // Key dependencies for re-running this effect if these states change.
+  }, [hasMounted, isSpeechRecognitionAvailable, toast, addMessageToLog, isLoading, processUserInput]); 
+
+
+  // Effect for Speech Recognition "not supported" message
+  useEffect(() => {
+      if (!hasMounted) return;
+      // Show message only if hasMounted is true AND feature is not available AND not already shown
+      if (!isSpeechRecognitionAvailable && typeof window !== 'undefined' && !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
           setStatusMessage("Speech recognition not supported. You can still type messages.");
           toast({
             title: "Browser Compatibility",
@@ -241,8 +242,7 @@ export default function AssistantChat() {
             variant: "default",
           });
       }
-    }
-  }, [hasMounted, isSpeechRecognitionAvailable, toast, addMessageToLog, isLoading, processUserInput, setIsLoading, setStatusMessage, setIsListening]); // Added setIsLoading, setStatusMessage, setIsListening
+  }, [hasMounted, isSpeechRecognitionAvailable, toast]);
 
   // Effect for Speech Synthesis "not supported" message
   useEffect(() => {
@@ -272,7 +272,6 @@ export default function AssistantChat() {
     if (isListening) {
       speechRecognitionRef.current?.stop();
     } else {
-      // Check for microphone permission before starting
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
           speechRecognitionRef.current?.start();
@@ -292,9 +291,9 @@ export default function AssistantChat() {
       case 'sadness': case 'sad': return <Frown className="w-6 h-6 text-blue-500" />;
       case 'anger': case 'angry': return <Angry className="w-6 h-6 text-red-500" />;
       case 'anxiety': case 'anxious': return <AlertCircle className="w-6 h-6 text-orange-500" />;
-      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />; // Or a more fitting icon
+      case 'loneliness': case 'lonely': return <Bot className="w-6 h-6 text-purple-500" />;
       case 'neutral': return <Info className="w-6 h-6 text-gray-400" />;
-      default: return <Brain className="w-6 h-6 text-gray-500" />; // For unknown or other emotions
+      default: return <Brain className="w-6 h-6 text-gray-500" />;
     }
   };
 
@@ -392,7 +391,7 @@ export default function AssistantChat() {
                       id="audio-playback-switch"
                       checked={isAudioPlaybackEnabled}
                       onCheckedChange={setIsAudioPlaybackEnabled}
-                      disabled={!isSpeechSynthesisSupported} // Only disabled if feature not supported, not by isLoading
+                      disabled={!isSpeechSynthesisSupported}
                       aria-label={isAudioPlaybackEnabled ? "Disable audio response" : "Enable audio response"}
                     />
                     <Label htmlFor="audio-playback-switch" className="flex items-center text-muted-foreground cursor-pointer text-sm sm:text-base">
@@ -415,12 +414,12 @@ export default function AssistantChat() {
             ) : (
                 <Button
                     onClick={toggleListening}
-                    disabled={isLoading || !isSpeechRecognitionAvailable} // No !hasMounted here as hasMounted is true
+                    disabled={isLoading || !isSpeechRecognitionAvailable}
                     className="w-full xs:w-auto flex-grow xs:flex-grow-0 h-14 text-lg rounded-lg shadow-lg transform transition-transform hover:scale-105 active:scale-95"
                     aria-label={isListening ? "Stop listening" : "Start listening"}
                     variant={isListening ? "destructive" : "default"}
                 >
-                    {isLoading && !isListening ? ( // if loading but not listening (i.e. processing text or previous audio)
+                    {isLoading && !isListening ? ( 
                         <Loader2 className="w-7 h-7 mr-2 animate-spin" />
                     ) : isListening ? (
                         <MicOff className="w-7 h-7 mr-2 animate-pulse" />
@@ -436,4 +435,3 @@ export default function AssistantChat() {
     </Card>
   );
 }
-
